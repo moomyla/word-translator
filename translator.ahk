@@ -4,18 +4,19 @@
 
 ; ============================================================
 ;  全局划词翻译工具
-;  - 短选(<= ShortMax 字符):松开鼠标后自动弹出翻译结果,
-;    一直显示到你点别处 / 换选别的内容为止(不会自己倒计时消失)
-;  - 长选:出现一个小 "译" 图标(这个还是 8 秒后自动消失),点击后弹菜单(翻译 / 复制)
+;  - 短选(<= ShortMax 字符):松开鼠标后自动弹出翻译结果(系统原生 Tooltip),
+;    鼠标只要挪开选区一定距离(或者点一下),就立刻消失 —— 不需要专门去点别处
+;  - 长选:出现一个小 "译" 图标(8 秒后自动消失),点击后弹菜单(翻译 / 复制)
 ; ============================================================
 
 global ScriptDir := A_ScriptDir
 global ShortMax := 20
+global AwayDistance := 60   ; 鼠标离开选区多少像素后,自动收起翻译提示
 
 global downX := 0
 global downY := 0
-global popupGui := ""
 global iconGui := ""
+global popupWatchTimer := 0
 
 ReadBehaviorConfig()
 
@@ -24,7 +25,7 @@ TrayTip("划词翻译已启动", "选中文字试试看吧", "Mute")
 ; ---------- 鼠标按下:记录起点,顺手关掉上一次的弹窗 ----------
 ~LButton:: {
     global downX, downY
-    SafeDestroy(&popupGui)
+    HidePopup()
     SafeDestroy(&iconGui)
     MouseGetPos(&x, &y)
     downX := x
@@ -93,23 +94,43 @@ CallTranslate(text) {
     return Trim(FileRead(outFile, "UTF-8"))
 }
 
-; ---------- 短文本:自动弹出的翻译结果框(带淡入动画) ----------
-; 不设自动消失的计时器 —— 只要选区还在就一直显示,
-; 直到你点别处 / 重新选中别的内容(见 ~LButton:: 里的 SafeDestroy)才消失。
+; ---------- 短文本:翻译结果提示(系统原生 Tooltip,不会有残留/幽灵窗口) ----------
+; 显示后开始监视鼠标位置,一旦鼠标离选中位置超过 AwayDistance 像素就自动收起,
+; 不需要专门点一下别处才消失。
 ShowResultPopup(x, y, text) {
-    global popupGui
-    SafeDestroy(&popupGui)
+    global popupWatchTimer
+    HidePopup()
 
-    popupGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "translate")
-    popupGui.BackColor := "0xFFFCE8"
-    popupGui.SetFont("s10", "Microsoft YaHei")
-    popupGui.AddText("w300 cBlack", text)
-    popupGui.Show("x" (x + 15) " y" (y + 15) " NoActivate")
+    ToolTip(text, x + 15, y + 15)
 
-    FadeIn(popupGui.Hwnd)
+    watcher := WatchMouseAway.Bind(x, y)
+    popupWatchTimer := watcher
+    SetTimer(watcher, 120)
 }
 
-; ---------- 淡入动画:透明度从 0 平滑过渡到不透明 ----------
+; ---------- 鼠标是否已经离开选中点太远,离开就收起 ----------
+WatchMouseAway(anchorX, anchorY) {
+    global popupWatchTimer
+    MouseGetPos(&mx, &my)
+    dist := Sqrt((mx - anchorX) ** 2 + (my - anchorY) ** 2)
+    if (dist > AwayDistance) {
+        ToolTip()
+        SetTimer(popupWatchTimer, 0)
+        popupWatchTimer := 0
+    }
+}
+
+; ---------- 收起翻译提示(点击 / 新选区 / 鼠标移开时统一调用) ----------
+HidePopup() {
+    global popupWatchTimer
+    ToolTip()
+    if (popupWatchTimer) {
+        SetTimer(popupWatchTimer, 0)
+        popupWatchTimer := 0
+    }
+}
+
+; ---------- 淡入动画:透明度从 0 平滑过渡到不透明(给长文本的小图标用) ----------
 FadeIn(hwnd, steps := 10, stepDelayMs := 12) {
     WinSetTransparent(0, "ahk_id " hwnd)
     Loop steps {
