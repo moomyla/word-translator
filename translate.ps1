@@ -1,4 +1,4 @@
-# 由 translator.ahk 调用,不需要手动运行。
+﻿# 由 translator.ahk 调用,不需要手动运行。
 # 用法: powershell -File translate.ps1 <输入文本文件> <输出结果文件>
 
 param(
@@ -78,10 +78,21 @@ try {
         "content-type"      = "application/json"
     }
 
-    $response = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages" `
-        -Method Post -Headers $headers -Body $bodyBytes
+    # 用 Invoke-WebRequest + 手动按 UTF-8 解码原始字节,
+    # 绕开 Windows PowerShell 5.1 的一个老问题:
+    # 当响应没有显式声明 charset=utf-8 时,Invoke-RestMethod 会用错误的旧编码解析正文,
+    # 导致中文变成"重复编码"的乱码。
+    $webResponse = Invoke-WebRequest -Uri "https://api.anthropic.com/v1/messages" `
+        -Method Post -Headers $headers -Body $bodyBytes -UseBasicParsing
 
-    $result = $response.content[0].text
+    $rawStream = $webResponse.RawContentStream
+    $rawStream.Position = 0
+    $reader = New-Object System.IO.StreamReader($rawStream, [System.Text.Encoding]::UTF8)
+    $jsonText = $reader.ReadToEnd()
+    $reader.Dispose()
+
+    $responseObj = $jsonText | ConvertFrom-Json
+    $result = $responseObj.content[0].text
     $result | Out-File -FilePath $OutputFile -Encoding utf8
 }
 catch {
