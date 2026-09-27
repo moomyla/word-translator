@@ -4,13 +4,13 @@
 
 ; ============================================================
 ;  全局划词翻译工具
-;  - 短选(<= ShortMax 字符):松开鼠标后自动弹出翻译结果
-;  - 长选:出现一个小 "译" 图标,点击后弹菜单(翻译 / 复制)
+;  - 短选(<= ShortMax 字符):松开鼠标后自动弹出翻译结果,
+;    一直显示到你点别处 / 换选别的内容为止(不会自己倒计时消失)
+;  - 长选:出现一个小 "译" 图标(这个还是 8 秒后自动消失),点击后弹菜单(翻译 / 复制)
 ; ============================================================
 
 global ScriptDir := A_ScriptDir
 global ShortMax := 20
-global PopupSeconds := 6
 
 global downX := 0
 global downY := 0
@@ -94,8 +94,10 @@ CallTranslate(text) {
 }
 
 ; ---------- 短文本:自动弹出的翻译结果框(带淡入动画) ----------
+; 不设自动消失的计时器 —— 只要选区还在就一直显示,
+; 直到你点别处 / 重新选中别的内容(见 ~LButton:: 里的 SafeDestroy)才消失。
 ShowResultPopup(x, y, text) {
-    global popupGui, PopupSeconds
+    global popupGui
     SafeDestroy(&popupGui)
 
     popupGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "translate")
@@ -105,7 +107,6 @@ ShowResultPopup(x, y, text) {
     popupGui.Show("x" (x + 15) " y" (y + 15) " NoActivate")
 
     FadeIn(popupGui.Hwnd)
-    SetTimer(() => SafeDestroy(&popupGui), -PopupSeconds * 1000)
 }
 
 ; ---------- 淡入动画:透明度从 0 平滑过渡到不透明 ----------
@@ -146,8 +147,9 @@ ShowLongTextMenu(text, x, y, *) {
 }
 
 TranslateMenuItem(text, x, y, *) {
-    ShowLoadingPopup(x, y)
+    ToolTip("翻译中…", x + 15, y + 15)
     result := CallTranslate(text)
+    ToolTip()
     ShowResultPopup(x, y, result)
 }
 
@@ -166,14 +168,11 @@ SafeDestroy(&guiVar) {
 }
 
 ReadBehaviorConfig() {
-    global ScriptDir, ShortMax, PopupSeconds
+    global ScriptDir, ShortMax
     cfg := ScriptDir "\config.ini"
     if !FileExist(cfg)
         return
     v := IniRead(cfg, "behavior", "short_text_max_chars", "20")
     if v is Integer
         ShortMax := Integer(v)
-    v := IniRead(cfg, "behavior", "popup_seconds", "6")
-    if v is Integer
-        PopupSeconds := Integer(v)
 }
