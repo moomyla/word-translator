@@ -61,8 +61,10 @@ HandleSelection(mx, my) {
         return
 
     if (StrLen(text) <= ShortMax) {
-        ShowLoadingPopup(mx, my)
+        ; 用系统自带的轻量 Tooltip 做等待提示(没有自定义窗口的创建开销,不会闪)
+        ToolTip("翻译中…", mx + 15, my + 15)
         result := CallTranslate(text)
+        ToolTip()
         ShowResultPopup(mx, my, result)
     } else {
         ShowTranslateIcon(mx, my, text)
@@ -91,18 +93,7 @@ CallTranslate(text) {
     return Trim(FileRead(outFile, "UTF-8"))
 }
 
-; ---------- 短文本:自动弹出的翻译框 ----------
-ShowLoadingPopup(x, y) {
-    global popupGui
-    SafeDestroy(&popupGui)
-
-    popupGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "translate")
-    popupGui.BackColor := "0xFFFCE8"
-    popupGui.SetFont("s10", "Microsoft YaHei")
-    popupGui.AddText("w220", "翻译中…")
-    popupGui.Show("x" (x + 15) " y" (y + 15) " NoActivate")
-}
-
+; ---------- 短文本:自动弹出的翻译结果框(带淡入动画) ----------
 ShowResultPopup(x, y, text) {
     global popupGui, PopupSeconds
     SafeDestroy(&popupGui)
@@ -110,10 +101,23 @@ ShowResultPopup(x, y, text) {
     popupGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "translate")
     popupGui.BackColor := "0xFFFCE8"
     popupGui.SetFont("s10", "Microsoft YaHei")
-    popupGui.AddText("w280 cBlack", text)
+    popupGui.AddText("w300 cBlack", text)
     popupGui.Show("x" (x + 15) " y" (y + 15) " NoActivate")
 
+    FadeIn(popupGui.Hwnd)
     SetTimer(() => SafeDestroy(&popupGui), -PopupSeconds * 1000)
+}
+
+; ---------- 淡入动画:透明度从 0 平滑过渡到不透明 ----------
+FadeIn(hwnd, steps := 10, stepDelayMs := 12) {
+    WinSetTransparent(0, "ahk_id " hwnd)
+    Loop steps {
+        ; 淡入过程中窗口可能已经被关闭(比如用户很快又点了一下),这里直接停止
+        if !WinExist("ahk_id " hwnd)
+            return
+        WinSetTransparent(Round(A_Index / steps * 255), "ahk_id " hwnd)
+        Sleep(stepDelayMs)
+    }
 }
 
 ; ---------- 长文本:小图标 + 点击菜单 ----------
@@ -127,6 +131,7 @@ ShowTranslateIcon(x, y, text) {
     btn.OnEvent("Click", ShowLongTextMenu.Bind(text, x, y))
     iconGui.Show("x" (x + 10) " y" (y + 10) " w32 h32 NoActivate")
 
+    FadeIn(iconGui.Hwnd)
     SetTimer(() => SafeDestroy(&iconGui), -8000)
 }
 
