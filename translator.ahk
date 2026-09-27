@@ -17,6 +17,7 @@ global downX := 0
 global downY := 0
 global iconGui := ""
 global popupWatchTimer := 0
+global isProcessing := false
 
 ReadBehaviorConfig()
 
@@ -24,7 +25,7 @@ TrayTip("划词翻译已启动", "选中文字试试看吧", "Mute")
 
 ; ---------- 鼠标按下:记录起点,顺手关掉上一次的弹窗 ----------
 ~LButton:: {
-    global downX, downY
+    global downX, downY, iconGui
     HidePopup()
     SafeDestroy(&iconGui)
     MouseGetPos(&x, &y)
@@ -50,45 +51,68 @@ global ScreenshotToolProcesses := [
 
 ; ---------- 处理选中文本 ----------
 HandleSelection(mx, my) {
-    global ShortMax, ScreenshotToolProcesses
+    global ShortMax, ScreenshotToolProcesses, isProcessing
 
-    activeHwnd := WinExist("A")
-    if (activeHwnd) {
-        try {
-            procName := WinGetProcessName("ahk_id " activeHwnd)
-            for toolName in ScreenshotToolProcesses {
-                if (procName = toolName)
-                    return
+    ; 上一次划词的翻译还没跑完就先别处理新的,避免两次操作同时抢剪贴板
+    if (isProcessing)
+        return
+    isProcessing := true
+
+    try {
+        activeHwnd := WinExist("A")
+        if (activeHwnd) {
+            try {
+                procName := WinGetProcessName("ahk_id " activeHwnd)
+                for toolName in ScreenshotToolProcesses {
+                    if (procName = toolName)
+                        return
+                }
             }
         }
+
+        savedClip := TryGetClipboardAll()
+        if !IsObject(savedClip)
+            return
+
+        A_Clipboard := ""
+
+        Send("^c")
+        gotChange := ClipWait(0.4)
+        text := gotChange ? Trim(A_Clipboard) : ""
+
+        ; 只有在剪贴板里现在的内容确实还是"刚才我们自己复制出来的这份"时才还原,
+        ; 否则说明这段时间里有别的程序(比如截图工具刚截完图)也写了剪贴板,
+        ; 这时候不要动它,免得把人家刚放进去的新内容(比如截图)覆盖掉。
+        currentIsOurs := gotChange ? (A_Clipboard == text) : (A_Clipboard == "")
+        if (currentIsOurs)
+            try A_Clipboard := savedClip
+
+        if (!gotChange || text = "")
+            return
+
+        if (StrLen(text) <= ShortMax) {
+            ; 用系统自带的轻量 Tooltip 做等待提示(没有自定义窗口的创建开销,不会闪)
+            ToolTip("翻译中…", mx + 15, my + 15)
+            result := CallTranslate(text)
+            ToolTip()
+            ShowResultPopup(mx, my, result)
+        } else {
+            ShowTranslateIcon(mx, my, text)
+        }
+    } finally {
+        isProcessing := false
     }
+}
 
-    savedClip := ClipboardAll()
-    A_Clipboard := ""
-
-    Send("^c")
-    gotChange := ClipWait(0.4)
-    text := gotChange ? Trim(A_Clipboard) : ""
-
-    ; 只有在剪贴板里现在的内容确实还是"刚才我们自己复制出来的这份"时才还原,
-    ; 否则说明这段时间里有别的程序(比如截图工具刚截完图)也写了剪贴板,
-    ; 这时候不要动它,免得把人家刚放进去的新内容(比如截图)覆盖掉。
-    currentIsOurs := gotChange ? (A_Clipboard == text) : (A_Clipboard == "")
-    if (currentIsOurs)
-        A_Clipboard := savedClip
-
-    if (!gotChange || text = "")
-        return
-
-    if (StrLen(text) <= ShortMax) {
-        ; 用系统自带的轻量 Tooltip 做等待提示(没有自定义窗口的创建开销,不会闪)
-        ToolTip("翻译中…", mx + 15, my + 15)
-        result := CallTranslate(text)
-        ToolTip()
-        ShowResultPopup(mx, my, result)
-    } else {
-        ShowTranslateIcon(mx, my, text)
+; 剪贴板偶尔会被别的程序短暂占用,读取失败就重试几次,一直不行就放弃这次划词
+TryGetClipboardAll() {
+    Loop 3 {
+        try
+            return ClipboardAll()
+        catch
+            Sleep(30)
     }
+    return ""
 }
 
 ; ---------- 调用 PowerShell 脚本做实际翻译 ----------
@@ -173,7 +197,14 @@ ShowTranslateIcon(x, y, text) {
     iconGui.Show("x" (x + 10) " y" (y + 10) " w32 h32 NoActivate")
 
     FadeIn(iconGui.Hwnd)
-    SetTimer(() => SafeDestroy(&iconGui), -8000)
+    SetTimer(HideIconGui, -8000)
+}
+
+; 单独用一个具名函数来关闭图标,不要在箭头函数里对外层变量取地址(&) ——
+; 这种写法在 AutoHotkey v2 里偶尔会导致引用失效,报 "parameter has not been assigned a value"
+HideIconGui() {
+    global iconGui
+    SafeDestroy(&iconGui)
 }
 
 ShowLongTextMenu(text, x, y, *) {
