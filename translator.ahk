@@ -18,6 +18,7 @@ global downY := 0
 global iconGui := ""
 global popupWatchTimer := 0
 global isProcessing := false
+global requestGen := 0
 
 ReadBehaviorConfig()
 
@@ -51,31 +52,32 @@ global ScreenshotToolProcesses := [
 
 ; ---------- 处理选中文本 ----------
 HandleSelection(mx, my) {
-    global ShortMax, ScreenshotToolProcesses, isProcessing
+    global ShortMax, ScreenshotToolProcesses, isProcessing, requestGen
 
-    ; 上一次划词的翻译还没跑完就先别处理新的,避免两次操作同时抢剪贴板
+    activeHwnd := WinExist("A")
+    if (activeHwnd) {
+        try {
+            procName := WinGetProcessName("ahk_id " activeHwnd)
+            for toolName in ScreenshotToolProcesses {
+                if (procName = toolName)
+                    return
+            }
+        }
+    }
+
+    ; 抢剪贴板这一小段(通常零点几秒)排队执行,避免两次划词同时读写剪贴板报错;
+    ; 后面比较慢的翻译请求本身不受这个限制,可以多个同时进行。
     if (isProcessing)
         return
     isProcessing := true
-
+    text := ""
+    gotChange := false
     try {
-        activeHwnd := WinExist("A")
-        if (activeHwnd) {
-            try {
-                procName := WinGetProcessName("ahk_id " activeHwnd)
-                for toolName in ScreenshotToolProcesses {
-                    if (procName = toolName)
-                        return
-                }
-            }
-        }
-
         savedClip := TryGetClipboardAll()
         if !IsObject(savedClip)
             return
 
         A_Clipboard := ""
-
         Send("^c")
         gotChange := ClipWait(0.4)
         text := gotChange ? Trim(A_Clipboard) : ""
@@ -86,21 +88,28 @@ HandleSelection(mx, my) {
         currentIsOurs := gotChange ? (A_Clipboard == text) : (A_Clipboard == "")
         if (currentIsOurs)
             try A_Clipboard := savedClip
-
-        if (!gotChange || text = "")
-            return
-
-        if (StrLen(text) <= ShortMax) {
-            ; 用系统自带的轻量 Tooltip 做等待提示(没有自定义窗口的创建开销,不会闪)
-            ToolTip("翻译中…", mx + 15, my + 15)
-            result := CallTranslate(text)
-            ToolTip()
-            ShowResultPopup(mx, my, result)
-        } else {
-            ShowTranslateIcon(mx, my, text)
-        }
     } finally {
         isProcessing := false
+    }
+
+    if (!gotChange || text = "")
+        return
+
+    ; 每次划词发一个"代次号",翻译回来的时候如果已经不是最新一次划词,
+    ; 就直接丢弃这个结果 —— 避免"上一个词翻译很慢,回来的时候鼠标已经跑远了"
+    ; 导致弹窗一闪就消失的怪现象。
+    myGen := ++requestGen
+
+    if (StrLen(text) <= ShortMax) {
+        ; 用系统自带的轻量 Tooltip 做等待提示(没有自定义窗口的创建开销,不会闪)
+        ToolTip("翻译中…", mx + 15, my + 15)
+        result := CallTranslate(text)
+        ToolTip()
+        if (myGen != requestGen)
+            return
+        ShowResultPopup(mx, my, result)
+    } else {
+        ShowTranslateIcon(mx, my, text)
     }
 }
 
