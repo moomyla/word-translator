@@ -42,23 +42,42 @@ TrayTip("划词翻译已启动", "选中文字试试看吧", "Mute")
     }
 }
 
+; 已知的截图工具进程名 —— 在这些工具的窗口里拖拽,不当作文字选中处理
+global ScreenshotToolProcesses := [
+    "ScreenClippingHost.exe", "SnippingTool.exe", "ShareX.exe",
+    "PicPick.exe", "Greenshot.exe"
+]
+
 ; ---------- 处理选中文本 ----------
 HandleSelection(mx, my) {
-    global ShortMax
+    global ShortMax, ScreenshotToolProcesses
+
+    activeHwnd := WinExist("A")
+    if (activeHwnd) {
+        try {
+            procName := WinGetProcessName("ahk_id " activeHwnd)
+            for toolName in ScreenshotToolProcesses {
+                if (procName = toolName)
+                    return
+            }
+        }
+    }
 
     savedClip := ClipboardAll()
     A_Clipboard := ""
 
     Send("^c")
-    if !ClipWait(0.4) {
+    gotChange := ClipWait(0.4)
+    text := gotChange ? Trim(A_Clipboard) : ""
+
+    ; 只有在剪贴板里现在的内容确实还是"刚才我们自己复制出来的这份"时才还原,
+    ; 否则说明这段时间里有别的程序(比如截图工具刚截完图)也写了剪贴板,
+    ; 这时候不要动它,免得把人家刚放进去的新内容(比如截图)覆盖掉。
+    currentIsOurs := gotChange ? (A_Clipboard == text) : (A_Clipboard == "")
+    if (currentIsOurs)
         A_Clipboard := savedClip
-        return
-    }
 
-    text := Trim(A_Clipboard)
-    A_Clipboard := savedClip
-
-    if (text = "")
+    if (!gotChange || text = "")
         return
 
     if (StrLen(text) <= ShortMax) {
