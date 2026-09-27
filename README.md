@@ -24,13 +24,15 @@
 - **长文本**:选中后旁边出现一个小小的"译"按钮,点一下弹出菜单,选"翻译"或"复制"
 - 退出:右键点任务栏的 AutoHotkey 图标 → Exit
 
-## 开机自启(可选)
+## 开机自启
 
-把 `translator.ahk` 的快捷方式放进这个文件夹:
+已经设置好了 —— `translator.ahk` 的快捷方式放在了:
 ```
-%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\word-translator.lnk
 ```
-下次开机就会自动运行。
+每次开机登录 Windows 都会自动启动。如果想取消开机自启,把这个快捷方式删掉就行(不影响 `translator.ahk` 本体,想手动运行的话双击它照常可以用)。
+
+如果是在别的电脑上重新部署,自己建一下这个快捷方式就行:右键 `translator.ahk` → 发送到 → 桌面快捷方式,再把生成的快捷方式剪切到上面这个 Startup 文件夹里。
 
 ## 已知限制
 
