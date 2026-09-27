@@ -1,0 +1,6 @@
+# 真正的配置文件里存着 API Key,绝不提交
+config.ini
+
+# 编辑器/系统杂项
+Thumbs.db
+.DS_Store
