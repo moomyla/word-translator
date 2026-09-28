@@ -80,6 +80,14 @@ HandleSelection(mx, my) {
         A_Clipboard := ""
         Send("^c")
         gotChange := ClipWait(0.4)
+
+        ; 剪贴板里如果有"文件"(比如在资源管理器/相册里拖框选了几个文件),
+        ; 说明这根本不是文字选中,不当作划词处理,直接放弃这一次。
+        CF_HDROP := 15
+        if (gotChange && DllCall("IsClipboardFormatAvailable", "UInt", CF_HDROP)) {
+            gotChange := false
+        }
+
         text := gotChange ? Trim(A_Clipboard) : ""
 
         ; 只有在剪贴板里现在的内容确实还是"刚才我们自己复制出来的这份"时才还原,
